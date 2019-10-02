@@ -1,0 +1,261 @@
+REPORT Z_Inventory-aging_report.
+*TABLES: t001k,s032,makt.
+
+TYPES: BEGIN OF ty_t001k,
+         bwkey TYPE t001k-bwkey,
+         bukrs TYPE t001k-bukrs,
+       END OF ty_t001k.
+*
+TYPES : BEGIN OF ty_mbew,
+          bwkey TYPE mbew-bwkey,
+        END OF ty_mbew.
+*
+TYPES: BEGIN OF ty_s032,
+         lgort    TYPE s032-lgort,
+         matnr    TYPE s032-matnr,
+         basme    TYPE s032-basme,
+         mtart    TYPE s032-mtart,
+         matkl    TYPE s032-matkl,
+         mbwbest  TYPE s032-mbwbest,
+         wbwbest  TYPE s032-wbwbest,
+         werks    TYPE s032-werks,
+         letztbew TYPE s032-letztbew,
+       END OF ty_s032.
+*
+TYPES: BEGIN OF ty_makt,
+         matnr TYPE makt-matnr,
+         maktx TYPE makt-maktx,
+       END OF ty_makt.
+*
+*TYPES : BEGIN OF ty_final,
+*          lgort   TYPE s032-lgort,
+*          matnr   TYPE s032-matnr,
+*          basme   TYPE s032-basme,
+*          mtart   TYPE s032-mtart,
+*          matkl   TYPE s032-matkl,
+*          mbwbest TYPE s032-mbwbest,
+*          wbwbest TYPE s032-wbwbest,
+*          bwkey   TYPE t001k-bwkey,
+*          bukrs   TYPE t001k-bukrs,
+*          maktx   TYPE makt-maktx,
+*        END OF ty_final.
+
+DATA : wa_t001k TYPE ty_t001k,
+       it_t001k TYPE TABLE OF ty_t001k.
+*
+DATA : wa_s032 TYPE ty_s032,
+       it_s032 TYPE TABLE OF  ty_s032.
+*
+DATA : wa_makt TYPE ty_makt,
+       it_makt TYPE TABLE OF ty_makt.
+*
+*DATA : wa_final TYPE ty_final,
+*       it_final TYPE TABLE OF ty_final.
+*
+DATA : wa_zfi_aging_str TYPE zfi_aging_str,
+       it_zfi_aging_str TYPE TABLE OF zfi_aging_str.
+*
+DATA : fcat_grid    TYPE slis_t_fieldcat_alv,
+       wa_fcat_grid LIKE LINE OF fcat_grid,
+       wa_layout    TYPE slis_layout_alv.
+*
+DATA : lv_bukrs TYPE t001k-bukrs.
+DATA : lv_bwkey TYPE t001k-bwkey.
+*
+DATA : lv_date  TYPE s032-letztbew.
+DATA : lv_lgort TYPE s032-lgort.
+DATA : lv_mtart TYPE s032-mtart.
+DATA : lv_matkl TYPE s032-matkl.
+
+DATA: lv_fpname TYPE fpname,
+      lv_fmname TYPE funcname.
+DATA: lv_params  TYPE sfpoutputparams,
+      lv_printer TYPE  char7 VALUE 'PRINTER',
+      lv_pdf     TYPE  char3 VALUE 'PDF'.
+DATA: ls_doc_param  TYPE sfpdocparams,
+      lv_formoutput TYPE fpformoutput.
+
+
+
+SELECTION-SCREEN:BEGIN OF BLOCK b1.
+
+PARAMETERS     : p_date   TYPE  s032-letztbew.
+SELECT-OPTIONS : s_comp   FOR   lv_bukrs.
+SELECT-OPTIONS : s_plant  FOR   lv_bwkey.
+SELECT-OPTIONS : s_loc    FOR   lv_lgort.
+SELECT-OPTIONS : s_type   FOR   lv_mtart.
+SELECT-OPTIONS : s_grp    FOR   lv_matkl.
+
+SELECTION-SCREEN: END OF BLOCK b1.
+
+START-OF-SELECTION.
+*
+  SELECT
+        bwkey
+        bukrs
+    FROM t001k
+    INTO TABLE it_t001k
+    WHERE bukrs IN s_comp
+    AND   bwkey IN s_plant.
+
+  SELECT
+      lgort
+      matnr
+      basme
+      mtart
+      matkl
+      mbwbest
+      wbwbest
+      werks
+      letztbew
+  FROM s032
+  INTO TABLE it_s032
+  FOR ALL ENTRIES IN it_t001k
+  WHERE   werks = it_t001k-bukrs
+    AND  letztbew LE p_date
+    AND  lgort   IN s_loc
+    AND  mtart   IN s_type
+    AND  matkl   IN s_grp
+    AND  werks   IN s_plant
+    and mbwbest gt 0.
+*
+  SELECT
+            matnr
+            maktx
+      FROM makt
+      INTO TABLE it_makt.
+*
+  SORT it_s032 BY matnr ASCENDING lgort DESCENDING.
+    LOOP AT it_s032 INTO wa_s032.
+*
+      wa_zfi_aging_str-lgort   = wa_s032-lgort.
+      wa_zfi_aging_str-matnr   = wa_s032-matnr.
+      wa_zfi_aging_str-basme   = wa_s032-basme.
+      wa_zfi_aging_str-mtart   = wa_s032-mtart.
+      wa_zfi_aging_str-matkl   = wa_s032-matkl.
+      wa_zfi_aging_str-mbwbest = wa_s032-mbwbest.
+      wa_zfi_aging_str-wbwbest = wa_s032-wbwbest.
+*
+    READ TABLE it_t001k INTO wa_t001k WITH KEY bukrs = wa_s032-werks.
+*
+    IF sy-subrc = 0.
+      wa_zfi_aging_str-bwkey  = wa_t001k-bwkey.
+      wa_zfi_aging_str-bukrs  = wa_t001k-bukrs.
+
+    ENDIF.
+*
+*
+    READ TABLE it_makt INTO wa_makt WITH KEY matnr = wa_s032-matnr.
+*
+    IF sy-subrc = 0.
+      wa_zfi_aging_str-maktx  = wa_makt-maktx.
+    ENDIF.
+*
+    APPEND wa_zfi_aging_str TO it_zfi_aging_str."wa_ZFI_AGING_STR
+    CLEAR :wa_zfi_aging_str, wa_t001k, wa_makt.
+  ENDLOOP.
+
+*
+    wa_fcat_grid-fieldname   = 'BUKRS'.
+    wa_fcat_grid-seltext_l   = 'company'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'BWKEY'.
+    wa_fcat_grid-seltext_l   = 'plant'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'LGORT'.
+    wa_fcat_grid-seltext_l   = 'storage loc'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'MATNR'.
+    wa_fcat_grid-seltext_l   = 'material no'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'MAKTX'.
+    wa_fcat_grid-seltext_l   = 'des'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'MTART'.
+    wa_fcat_grid-seltext_l   = 'material type'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'MATKL'.
+    wa_fcat_grid-seltext_l   = 'mat grp'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'BASME'.
+    wa_fcat_grid-seltext_l   = 'unit'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'MBWBEST'.
+    wa_fcat_grid-seltext_l   = 'quantity'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    wa_fcat_grid-fieldname   = 'WBWBEST'.
+    wa_fcat_grid-seltext_l   = 'value'.
+    wa_fcat_grid-cfieldname  =  'WAERS'.
+    APPEND wa_fcat_grid TO fcat_grid.
+    CLEAR  wa_fcat_grid.
+*
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+      EXPORTING
+*       I_INTERFACE_CHECK                 = ' '
+*       I_BYPASSING_BUFFER                = ' '
+*       I_BUFFER_ACTIVE                   = ' '
+*       I_CALLBACK_PROGRAM                = ' '
+*       I_CALLBACK_PF_STATUS_SET          = ' '
+*       I_CALLBACK_USER_COMMAND           = ' '
+*       I_CALLBACK_TOP_OF_PAGE            = ' '
+*       I_CALLBACK_HTML_TOP_OF_PAGE       = ' '
+*       I_CALLBACK_HTML_END_OF_LIST       = ' '
+*       I_STRUCTURE_NAME                  =
+*       I_BACKGROUND_ID                   = ' '
+*       I_GRID_TITLE                      =
+*       I_GRID_SETTINGS                   =
+        is_layout   = wa_layout
+        it_fieldcat = fcat_grid
+*       IT_EXCLUDING                      =
+*       IT_SPECIAL_GROUPS                 =
+*       IT_SORT     =
+*       IT_FILTER   =
+*       IS_SEL_HIDE =
+*       I_DEFAULT   = 'X'
+*       I_SAVE      = ' '
+*       IS_VARIANT  =
+*       IT_EVENTS   =
+*       IT_EVENT_EXIT                     =
+*       IS_PRINT    =
+*       IS_REPREP_ID                      =
+*       I_SCREEN_START_COLUMN             = 0
+*       I_SCREEN_START_LINE               = 0
+*       I_SCREEN_END_COLUMN               = 0
+*       I_SCREEN_END_LINE                 = 0
+*       I_HTML_HEIGHT_TOP                 = 0
+*       I_HTML_HEIGHT_END                 = 0
+*       IT_ALV_GRAPHICS                   =
+*       IT_HYPERLINK                      =
+*       IT_ADD_FIELDCAT                   =
+*       IT_EXCEPT_QINFO                   =
+*       IR_SALV_FULLSCREEN_ADAPTER        =
+* IMPORTING
+*       E_EXIT_CAUSED_BY_CALLER           =
+*       ES_EXIT_CAUSED_BY_USER            =
+      TABLES
+        t_outtab    = it_zfi_aging_str
+* EXCEPTIONS
+*       PROGRAM_ERROR                     = 1
+*       OTHERS      = 2
+      .
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
