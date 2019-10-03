@@ -1,4 +1,4 @@
-REPORT Z_Inventory-aging_report.
+REPORT ZR2.
 *TABLES: t001k,s032,makt.
 
 TYPES: BEGIN OF ty_t001k,
@@ -27,19 +27,6 @@ TYPES: BEGIN OF ty_makt,
          maktx TYPE makt-maktx,
        END OF ty_makt.
 *
-*TYPES : BEGIN OF ty_final,
-*          lgort   TYPE s032-lgort,
-*          matnr   TYPE s032-matnr,
-*          basme   TYPE s032-basme,
-*          mtart   TYPE s032-mtart,
-*          matkl   TYPE s032-matkl,
-*          mbwbest TYPE s032-mbwbest,
-*          wbwbest TYPE s032-wbwbest,
-*          bwkey   TYPE t001k-bwkey,
-*          bukrs   TYPE t001k-bukrs,
-*          maktx   TYPE makt-maktx,
-*        END OF ty_final.
-
 DATA : wa_t001k TYPE ty_t001k,
        it_t001k TYPE TABLE OF ty_t001k.
 *
@@ -70,6 +57,8 @@ DATA : lv_matkl TYPE s032-matkl.
 DATA: lv_fpname TYPE fpname,
       lv_fmname TYPE funcname.
 DATA: lv_params  TYPE sfpoutputparams,
+*        /1bcdwb/docparams  TYPE sfpdocparams,
+*        /1bcdwb/formoutput TYPE  fpformoutput,
       lv_printer TYPE  char7 VALUE 'PRINTER',
       lv_pdf     TYPE  char3 VALUE 'PDF'.
 DATA: ls_doc_param  TYPE sfpdocparams,
@@ -79,6 +68,8 @@ DATA: ls_doc_param  TYPE sfpdocparams,
 
 SELECTION-SCREEN:BEGIN OF BLOCK b1.
 
+PARAMETERS     : alv_grid RADIOBUTTON GROUP r1 DEFAULT 'X'.
+PARAMETERS     : form RADIOBUTTON GROUP r1.
 PARAMETERS     : p_date   TYPE  s032-letztbew.
 SELECT-OPTIONS : s_comp   FOR   lv_bukrs.
 SELECT-OPTIONS : s_plant  FOR   lv_bwkey.
@@ -156,6 +147,7 @@ START-OF-SELECTION.
   ENDLOOP.
 
 *
+  IF alv_grid = 'X'.
     wa_fcat_grid-fieldname   = 'BUKRS'.
     wa_fcat_grid-seltext_l   = 'company'.
     APPEND wa_fcat_grid TO fcat_grid.
@@ -259,3 +251,72 @@ START-OF-SELECTION.
     IF sy-subrc <> 0.
 * Implement suitable error handling here
     ENDIF.
+  ENDIF.
+
+  lv_fpname = 'ZFI_F_AGING'.
+
+  IF form = 'X'.
+
+    TRY.
+        CALL FUNCTION 'FP_FUNCTION_MODULE_NAME'
+          EXPORTING
+            i_name     = lv_fpname
+          IMPORTING
+            e_funcname = lv_fmname.
+*   E_INTERFACE_TYPE           =
+*   EV_FUNCNAME_INBOUND        =
+
+      CATCH cx_fp_api_repository cx_fp_api_usage cx_fp_api_internal.
+        MESSAGE ID 'FPAPIGENERIC' TYPE 'E' NUMBER '000' WITH lv_fmname.
+    ENDTRY          .
+*
+    lv_params-preview  = abap_true.
+    lv_params-nodialog = abap_true.
+    lv_params-device   = lv_printer.
+    lv_params-dest     = 'LP01'."C_PDF.
+*
+    CALL FUNCTION 'FP_JOB_OPEN'
+      CHANGING
+        ie_outputparams = lv_params
+      EXCEPTIONS
+        cancel          = 1
+        usage_error     = 2
+        system_error    = 3
+        internal_error  = 4
+        OTHERS          = 5.
+*
+    CALL FUNCTION lv_fmname "'/1BCDWB/SM00001331'
+      EXPORTING
+*       /1BCDWB/DOCPARAMS        =
+        company1       = s_comp-high
+        plant1         = s_plant-high
+        location1      = s_loc-high
+        type1          = s_type-high
+        grp1           = s_grp-high
+        grp            = s_grp-low
+        type           = s_type-low
+        location       = s_loc-low
+        plant          = s_plant-low
+        company        = s_comp-low
+        date           = p_date
+        zfinal         = it_zfi_aging_str
+* IMPORTING
+*       /1BCDWB/FORMOUTPUT       =
+      EXCEPTIONS
+        usage_error    = 1
+        system_error   = 2
+        internal_error = 3
+        OTHERS         = 4.
+*
+    CALL FUNCTION 'FP_JOB_CLOSE'
+* IMPORTING
+*   E_RESULT             =
+      EXCEPTIONS
+        usage_error    = 1
+        system_error   = 2
+        internal_error = 3
+        OTHERS         = 4.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+  ENDIF.
